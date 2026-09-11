@@ -45,6 +45,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # setup-go v7 sets GOTOOLCHAIN=local; helm v4 needs auto to upgrade Go when required
+      - name: Restore GOTOOLCHAIN auto
+        run: echo "GOTOOLCHAIN=auto" >> "$GITHUB_ENV"
+
       - name: Install make gen tools
         run: |
           mkdir -p bin
