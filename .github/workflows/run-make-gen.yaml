@@ -44,7 +44,7 @@ jobs:
           cache: true
 
       - name: Run make gen
-        run: make gen
+        run: BUILD_WITH_CONTAINER=0 make gen
 
       - name: Commit and push generated files
         id: commit
