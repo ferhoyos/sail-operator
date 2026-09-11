@@ -1,0 +1,89 @@
+name: run-make-gen
+
+# Regenerates sail-operator bundle/CSV artifacts after source-only PRs (version bump or
+# image-vars). Fork-only experiment — never enable on openshift-service-mesh/sail-operator
+# without team review.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - 'release-3.*'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: make-gen-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  make-gen:
+    if: >-
+      github.repository == 'ferhoyos/sail-operator' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !contains(github.event.pull_request.labels.*.name, 'make-gen-done') &&
+      (
+        startsWith(github.event.pull_request.head.ref, 'bump-version-') ||
+        startsWith(github.event.pull_request.head.ref, 'image-vars-')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run make gen
+        run: make gen
+
+      - name: Commit and push generated files
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No changes from make gen"
+            exit 0
+          fi
+
+          git add -u
+          git commit -m "chore: run make gen [skip ci]"
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Mark PR as make-gen-done
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = context.payload.pull_request.labels.map((l) => l.name);
+            if (!labels.includes('make-gen-done')) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: ['make-gen-done'],
+              });
+            }
+
+            const changed = '${{ steps.commit.outputs.changed }}' === 'true';
+            const body = changed
+              ? '✅ **run-make-gen** committed regenerated files from `make gen`.'
+              : '✅ **run-make-gen** finished — `make gen` produced no diff (already up to date).';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
