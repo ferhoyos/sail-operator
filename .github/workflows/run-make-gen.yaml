@@ -43,8 +43,15 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Install make gen tools
+        run: go install istio.io/tools/cmd/license-lint@release-1.30
+        env:
+          GOBIN: ${{ github.workspace }}/bin
+
       - name: Run make gen
         run: BUILD_WITH_CONTAINER=0 make gen
+        env:
+          PATH: ${{ github.workspace }}/bin:${{ PATH }}
 
       - name: Commit and push generated files
         id: commit
